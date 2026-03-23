@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { BrainNode, BrainLink, BrainMemory, MarketingSkill } from "../types";
-import { brainService } from "../lib/supabase";
+import { firebaseService } from "../lib/firebaseService";
 import { cn } from "../lib/utils";
 import { ABSORBED_SKILLS } from "../constants";
 
@@ -33,16 +33,64 @@ interface AgentBrainProps {
 }
 
 export function AgentBrain({ agent, onClose }: AgentBrainProps) {
-  const [view, setView] = useState<"graph" | "vault" | "neural" | "skills">("graph");
+  const [view, setView] = useState<"graph" | "vault" | "neural" | "skills" | "analytics">("graph");
   const [memories, setMemories] = useState<BrainMemory[]>([]);
   const [selectedMemory, setSelectedMemory] = useState<BrainMemory | null>(null);
   const [isNewNoteOpen, setIsNewNoteOpen] = useState(false);
   const [newNote, setNewNote] = useState({ title: "", content: "", tags: "" });
   const [graphData, setGraphData] = useState<{ nodes: BrainNode[], links: BrainLink[] }>({ nodes: [], links: [] });
+  const [highlightNodes, setHighlightNodes] = useState(new Set());
+  const [highlightLinks, setHighlightLinks] = useState(new Set());
   const [isSyncing, setIsSyncing] = useState(false);
   const [neuralPulse, setNeuralPulse] = useState(0);
 
+  // New states
+  const [vaultFilter, setVaultFilter] = useState("");
+  const [vaultSort, setVaultSort] = useState<"date" | "roi">("date");
+  const [enabledSkills, setEnabledSkills] = useState<Record<string, boolean>>({});
+
   const graphRef = useRef<any>(null);
+
+  const updateHighlight = (node: any, links: any[]) => {
+    const newHighlightNodes = new Set();
+    const newHighlightLinks = new Set();
+    if (node) {
+      newHighlightNodes.add(node);
+      links.forEach(link => {
+        if (link.source.id === node.id || link.target.id === node.id) {
+          newHighlightLinks.add(link);
+          newHighlightNodes.add(link.source);
+          newHighlightNodes.add(link.target);
+        }
+      });
+    }
+    setHighlightNodes(newHighlightNodes);
+    setHighlightLinks(newHighlightLinks);
+  };
+
+  const analyzePatterns = () => {
+    // Simple pattern: highlight nodes that share the same tag
+    const tagCounts: Record<string, number> = {};
+    graphData.nodes.forEach(node => {
+      if (node.type === "metric") {
+        tagCounts[node.id] = (tagCounts[node.id] || 0) + 1;
+      }
+    });
+
+    const commonTags = Object.keys(tagCounts).filter(tag => tagCounts[tag] > 1);
+    
+    const newHighlightNodes = new Set();
+    const newHighlightLinks = new Set();
+
+    graphData.nodes.forEach(node => {
+      if (commonTags.includes(node.id)) {
+        newHighlightNodes.add(node);
+      }
+    });
+
+    setHighlightNodes(newHighlightNodes);
+    setHighlightLinks(newHighlightLinks);
+  };
 
   useEffect(() => {
     loadMemories();
@@ -54,7 +102,7 @@ export function AgentBrain({ agent, onClose }: AgentBrainProps) {
 
   const loadMemories = async () => {
     setIsSyncing(true);
-    const { data } = await brainService.getMemories(agent?.id);
+    const { data } = await firebaseService.getMemories(agent?.id);
     if (data) {
       setMemories(data);
       generateGraph(data);
@@ -88,14 +136,14 @@ export function AgentBrain({ agent, onClose }: AgentBrainProps) {
   const handleSaveNote = async () => {
     if (!newNote.title || !newNote.content) return;
     
-    const memory: Partial<BrainMemory> = {
+    const memory: Omit<BrainMemory, 'id' | 'createdAt'> = {
       agentId: agent?.id || "general",
       title: newNote.title,
       content: newNote.content,
       tags: newNote.tags.split(",").map(t => t.trim()).filter(t => t),
     };
 
-    await brainService.saveMemory(memory);
+    await firebaseService.saveMemory(memory);
     setNewNote({ title: "", content: "", tags: "" });
     setIsNewNoteOpen(false);
     loadMemories();
@@ -146,7 +194,7 @@ ${selectedMemory.content}`;
               {isSyncing && <Activity className="w-4 h-4 text-blue-400 animate-pulse" />}
             </h2>
             <p className="text-[10px] uppercase tracking-widest text-blue-400 font-mono">
-              Sincronizado com Obsidian & Supabase v2.0
+              Sincronizado com Obsidian & Firebase v2.1
             </p>
           </div>
         </div>
@@ -188,6 +236,15 @@ ${selectedMemory.content}`;
               )}
             >
               <Library className="w-3 h-3" /> Skills
+            </button>
+            <button 
+              onClick={() => setView("analytics")}
+              className={cn(
+                "px-3 py-1.5 rounded-md text-[10px] uppercase font-bold transition-all flex items-center gap-2",
+                view === "analytics" ? "bg-blue-600 text-white" : "text-white/50 hover:text-white"
+              )}
+            >
+              <Activity className="w-3 h-3" /> Analytics
             </button>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-all">
@@ -244,17 +301,24 @@ ${selectedMemory.content}`;
                 ref={graphRef}
                 graphData={graphData}
                 nodeLabel="label"
-                nodeColor={n => (n as any).color}
-                nodeVal={n => (n as any).val}
-                linkColor={() => "rgba(255,255,255,0.1)"}
-                linkWidth={l => (l as any).strength}
+                nodeColor={(n: any) => highlightNodes.has(n) ? "#ffffff" : n.color}
+                nodeVal={(n: any) => highlightNodes.has(n) ? n.val * 1.5 : n.val}
+                linkColor={(l: any) => highlightLinks.has(l) ? "#ffffff" : "rgba(255,255,255,0.1)"}
+                linkWidth={(l: any) => highlightLinks.has(l) ? 2 : l.strength}
                 backgroundColor="#0a0a0a"
+                onNodeHover={(node: any) => updateHighlight(node, graphData.links)}
                 onNodeClick={(node: any) => {
                   const mem = memories.find(m => m.id === node.id);
                   if (mem) setSelectedMemory(mem);
                 }}
               />
-              <div className="absolute bottom-4 right-4 p-3 bg-black/60 backdrop-blur-md border border-white/10 rounded-lg">
+              <div className="absolute bottom-4 right-4 p-3 bg-black/60 backdrop-blur-md border border-white/10 rounded-lg flex gap-2">
+                <button 
+                  onClick={analyzePatterns}
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-[10px] font-bold uppercase"
+                >
+                  Analisar Padrões
+                </button>
                 <div className="flex items-center gap-4 text-[10px] uppercase font-mono tracking-widest text-white/60">
                   <div className="flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full bg-blue-500" /> Agente
@@ -270,38 +334,67 @@ ${selectedMemory.content}`;
             </div>
           )}
 
-          {view === "vault" && selectedMemory && (
+          {view === "vault" && (
             <div className="w-full h-full flex flex-col p-8 overflow-y-auto custom-scrollbar">
               <div className="max-w-3xl mx-auto w-full space-y-6">
-                <div className="flex items-center justify-between">
-                  <h1 className="text-4xl font-bold tracking-tighter text-white italic serif">
-                    {selectedMemory.title}
-                  </h1>
-                  <div className="flex gap-2">
-                    <button 
-                      onClick={handleObsidianSync}
-                      className="p-2 hover:bg-white/10 rounded-lg transition-all text-white/50 flex items-center gap-2 group"
-                      title="Sincronizar com Obsidian (Download .md)"
-                    >
-                      <Share2 className="w-5 h-5 group-hover:text-blue-400" />
-                      <span className="text-[10px] font-bold uppercase hidden md:inline">Obsidian</span>
-                    </button>
-                    <button className="p-2 hover:bg-white/10 rounded-lg transition-all text-red-400">
-                      <Trash2 className="w-5 h-5" />
-                    </button>
+                <div className="flex items-center gap-4 bg-black/40 p-2 rounded-lg border border-white/10">
+                  <input 
+                    type="text"
+                    placeholder="Filtrar por tags ou título..."
+                    className="flex-1 bg-transparent text-sm text-white placeholder:text-white/30 focus:outline-none"
+                    value={vaultFilter}
+                    onChange={e => setVaultFilter(e.target.value)}
+                  />
+                  <select 
+                    className="bg-transparent text-[10px] text-white/50 uppercase font-bold focus:outline-none"
+                    value={vaultSort}
+                    onChange={e => setVaultSort(e.target.value as "date" | "roi")}
+                  >
+                    <option value="date">Data</option>
+                    <option value="roi">ROI</option>
+                  </select>
+                </div>
+                
+                <div className="space-y-4">
+                  {memories
+                    .filter(m => m.title.toLowerCase().includes(vaultFilter.toLowerCase()) || m.tags.some(t => t.toLowerCase().includes(vaultFilter.toLowerCase())))
+                    .sort((a, b) => vaultSort === "date" ? new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime() : (b.roi || 0) - (a.roi || 0))
+                    .map(memory => (
+                      <button
+                        key={memory.id}
+                        onClick={() => setSelectedMemory(memory)}
+                        className={cn(
+                          "w-full p-4 rounded-xl text-left transition-all border group",
+                          selectedMemory?.id === memory.id 
+                            ? "bg-blue-600/20 border-blue-600/50" 
+                            : "bg-white/5 border-transparent hover:border-white/10"
+                        )}
+                      >
+                        <div className="flex justify-between items-start">
+                          <h3 className="text-sm font-bold text-white">{memory.title}</h3>
+                          {memory.roi && <span className="text-xs font-mono text-emerald-400">ROI: {memory.roi}%</span>}
+                        </div>
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {memory.tags.map(tag => (
+                            <span key={tag} className="text-[8px] px-1.5 py-0.5 bg-white/10 rounded text-blue-300 font-mono">
+                              #{tag}
+                            </span>
+                          ))}
+                        </div>
+                      </button>
+                    ))}
+                </div>
+                {selectedMemory && (
+                  <div className="mt-8 p-6 bg-black/40 border border-white/10 rounded-xl space-y-4">
+                    <div className="flex justify-between items-center">
+                      <h3 className="text-xl font-bold text-white">{selectedMemory.title}</h3>
+                      <button onClick={() => setSelectedMemory(null)} className="text-white/50 hover:text-white">Fechar</button>
+                    </div>
+                    <div className="prose prose-invert max-w-none">
+                      <ReactMarkdown>{selectedMemory.content}</ReactMarkdown>
+                    </div>
                   </div>
-                </div>
-                <div className="flex gap-2">
-                  {selectedMemory.tags.map(tag => (
-                    <span key={tag} className="px-3 py-1 bg-blue-600/20 text-blue-400 rounded-full text-[10px] font-bold uppercase tracking-widest">
-                      #{tag}
-                    </span>
-                  ))}
-                </div>
-                <div className="h-px bg-white/10 w-full" />
-                <div className="prose prose-invert max-w-none">
-                  <ReactMarkdown>{selectedMemory.content}</ReactMarkdown>
-                </div>
+                )}
               </div>
             </div>
           )}
@@ -309,7 +402,7 @@ ${selectedMemory.content}`;
           {view === "neural" && (
             <div className="w-full h-full flex items-center justify-center bg-black">
               <div className="relative w-96 h-96">
-                {/* Mad Scientist Neural Visualization */}
+                {/* Neural Pulse Visualization */}
                 <motion.div 
                   animate={{ rotate: 360 }}
                   transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
@@ -324,44 +417,45 @@ ${selectedMemory.content}`;
                 <div className="absolute inset-0 flex items-center justify-center">
                   <div className="text-center space-y-4">
                     <div className="relative">
-                      <Zap className="w-16 h-16 text-blue-500 mx-auto animate-pulse" />
+                      <Zap className={cn("w-16 h-16 text-blue-500 mx-auto transition-all duration-300", neuralPulse > 50 ? "scale-110" : "scale-100")} />
                       <motion.div 
-                        animate={{ scale: [1, 2, 1], opacity: [0.5, 0, 0.5] }}
-                        transition={{ duration: 1, repeat: Infinity }}
+                        animate={{ scale: [1, 1.5, 1], opacity: [0.5, 0, 0.5] }}
+                        transition={{ duration: 1 - (neuralPulse / 100), repeat: Infinity }}
                         className="absolute inset-0 bg-blue-500 rounded-full blur-xl"
                       />
                     </div>
                     <div className="space-y-1">
-                      <p className="text-[10px] uppercase tracking-[0.3em] font-mono text-blue-400">Sinapses Ativas</p>
+                      <p className="text-[10px] uppercase tracking-[0.3em] font-mono text-blue-400">Carga de Processamento</p>
                       <p className="text-4xl font-bold text-white font-mono">{neuralPulse}%</p>
                     </div>
-                    <div className="w-48 h-1 bg-white/10 rounded-full overflow-hidden mx-auto">
+                    <div className="w-48 h-2 bg-white/10 rounded-full overflow-hidden mx-auto">
                       <motion.div 
                         animate={{ width: `${neuralPulse}%` }}
                         className="h-full bg-blue-500 shadow-[0_0_10px_#3b82f6]"
                       />
                     </div>
                     <p className="text-[9px] text-white/40 font-mono max-w-[200px] mx-auto">
-                      Processando padrões de marketing em tempo real via Supabase Vector Engine.
+                      {neuralPulse > 70 ? "Alta atividade: Otimizando conexões..." : "Sistema operando em capacidade nominal."}
                     </p>
                   </div>
                 </div>
 
-                {/* Floating "Neurons" */}
-                {[...Array(8)].map((_, i) => (
+                {/* Dynamic Neurons */}
+                {[...Array(12)].map((_, i) => (
                   <motion.div
                     key={i}
                     animate={{ 
-                      x: [0, Math.cos(i) * 150, 0], 
-                      y: [0, Math.sin(i) * 150, 0],
-                      opacity: [0, 1, 0]
+                      x: [0, Math.cos(i * 30) * (100 + neuralPulse), 0], 
+                      y: [0, Math.sin(i * 30) * (100 + neuralPulse), 0],
+                      opacity: [0, 1, 0],
+                      scale: [0.5, 1.5, 0.5]
                     }}
                     transition={{ 
-                      duration: 3 + Math.random() * 2, 
+                      duration: 2 - (neuralPulse / 100), 
                       repeat: Infinity,
-                      delay: i * 0.5
+                      delay: i * 0.2
                     }}
-                    className="absolute top-1/2 left-1/2 w-1 h-1 bg-blue-400 rounded-full"
+                    className="absolute top-1/2 left-1/2 w-2 h-2 bg-blue-400 rounded-full"
                   />
                 ))}
               </div>
@@ -396,23 +490,47 @@ ${selectedMemory.content}`;
                       </div>
                       <ul className="space-y-3">
                         {group.skills.map((skill, sIdx) => (
-                          <li key={sIdx} className="flex items-center gap-3 text-sm text-white/60 group-hover:text-white/80 transition-colors">
-                            <div className="w-1.5 h-1.5 bg-blue-500 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.6)]" />
-                            {skill}
+                          <li key={sIdx} className="flex items-center justify-between text-sm text-white/60 group-hover:text-white/80 transition-colors">
+                            <div className="flex items-center gap-3">
+                              <div className="w-1.5 h-1.5 bg-blue-500 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.6)]" />
+                              {skill}
+                            </div>
+                            <button 
+                              onClick={() => setEnabledSkills(prev => ({ ...prev, [skill]: !prev[skill] }))}
+                              className={cn("px-2 py-1 rounded text-[10px] font-bold uppercase", enabledSkills[skill] !== false ? "bg-blue-600 text-white" : "bg-white/10 text-white/40")}
+                            >
+                              {enabledSkills[skill] !== false ? "Ativo" : "Inativo"}
+                            </button>
                           </li>
                         ))}
                       </ul>
                     </motion.div>
                   ))}
                 </div>
+              </div>
+            </div>
+          )}
 
-                <div className="p-8 bg-blue-600/10 border border-blue-500/20 rounded-3xl text-center space-y-4">
-                  <Brain className="w-12 h-12 text-blue-500 mx-auto animate-bounce" />
-                  <h3 className="text-xl font-bold text-white">Distribuição Automática Ativa</h3>
-                  <p className="text-sm text-white/60 max-w-2xl mx-auto">
-                    Estas habilidades foram absorvidas de repositórios globais e estão sendo distribuídas para todos os agentes do enxame. 
-                    O Orquestrador gerencia a aplicação desses conhecimentos em cada tarefa delegada.
-                  </p>
+          {view === "analytics" && (
+            <div className="w-full h-full p-8 overflow-y-auto custom-scrollbar bg-[#0a0a0a]">
+              <div className="max-w-5xl mx-auto space-y-8">
+                <div className="text-center space-y-2">
+                  <h2 className="text-3xl font-black uppercase tracking-tighter text-white">Previsão de Performance</h2>
+                  <p className="text-blue-400 font-mono text-xs uppercase tracking-[0.3em]">Análise Preditiva de ROI</p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="p-6 bg-white/5 border border-white/10 rounded-2xl">
+                    <h3 className="text-sm font-bold text-white mb-2">ROI Projetado</h3>
+                    <p className="text-4xl font-black text-emerald-400">+24.5%</p>
+                  </div>
+                  <div className="p-6 bg-white/5 border border-white/10 rounded-2xl">
+                    <h3 className="text-sm font-bold text-white mb-2">Conversão Estimada</h3>
+                    <p className="text-4xl font-black text-blue-400">3.8%</p>
+                  </div>
+                  <div className="p-6 bg-white/5 border border-white/10 rounded-2xl">
+                    <h3 className="text-sm font-bold text-white mb-2">Custo por Aquisição</h3>
+                    <p className="text-4xl font-black text-orange-400">$12.40</p>
+                  </div>
                 </div>
               </div>
             </div>

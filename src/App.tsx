@@ -58,15 +58,19 @@ import {
   Activity,
   Paperclip,
   Loader2,
+  LogOut,
+  LogIn,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { ArtifactRenderer } from "./components/MarketingVisuals";
 import { LiveConversation } from "./components/LiveConversation";
 import { AgentBrain } from "./components/AgentBrain";
-import { MARKETING_SKILLS, MARKETING_FRAMEWORKS } from "./constants";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { MARKETING_SKILLS, MARKETING_FRAMEWORKS, CATEGORY_COLORS } from "./constants";
 import { MarketingSkill, SkillCategory, BrandProfile, Message, SkillTier, Artifact, BrainMemory } from "./types";
 import { cn } from "./lib/utils";
-import { brainService } from "./lib/supabase";
+import { firebaseService } from "./lib/firebaseService";
+import { auth, googleProvider, signInWithPopup, signOut, onAuthStateChanged, User as FirebaseUser } from "./firebase";
 import { gemini, MODELS } from "./services/gemini";
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
@@ -74,7 +78,10 @@ import {
 } from 'recharts';
 
 export default function App() {
+  const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
   const [selectedSkill, setSelectedSkill] = useState<MarketingSkill | null>(null);
+  const [expandedCategory, setExpandedCategory] = useState<SkillCategory | null>(null);
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -108,6 +115,53 @@ export default function App() {
   
   const chatEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setIsAuthReady(true);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (user) {
+      const loadData = async () => {
+        const profile = await firebaseService.getBrandProfile();
+        if (profile.data) setBrandProfile(profile.data);
+        
+        // Load messages for the current chat (using a default chat ID for now)
+        const chatMessages = await firebaseService.getMessages("default");
+        if (chatMessages.data) setMessages(chatMessages.data);
+      };
+      loadData();
+    }
+  }, [user]);
+
+  const handleLogin = async () => {
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (error) {
+      console.error("Login Error:", error);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      setMessages([]);
+      setBrandProfile({
+        name: "",
+        audience: "",
+        tone: "",
+        messaging: "",
+        productDetails: "",
+        competitors: ""
+      });
+    } catch (error) {
+      console.error("Logout Error:", error);
+    }
+  };
 
   const scrollToBottom = () => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -157,13 +211,15 @@ export default function App() {
         };
         setActiveArtifact(artifact);
         setIsWorkspaceOpen(true);
-        setMessages(prev => [...prev, { 
+        const aiMsg: Omit<Message, 'createdAt'> = { 
           role: "ai", 
           content: "Aqui está o criativo visual que desenvolvi para sua campanha.",
           agentName: "Diretor Criativo",
           agentTier: SkillTier.CREATIVE,
           artifacts: [artifact]
-        }]);
+        };
+        setMessages(prev => [...prev, aiMsg as Message]);
+        firebaseService.saveMessage("default", aiMsg);
       }
     } catch (error) {
       console.error("Image Gen Error:", error);
@@ -192,13 +248,15 @@ export default function App() {
         };
         setActiveArtifact(artifact);
         setIsWorkspaceOpen(true);
-        setMessages(prev => [...prev, { 
+        const aiMsg: Omit<Message, 'createdAt'> = { 
           role: "ai", 
           content: "Aqui está o vídeo generativo que criei para sua estratégia.",
           agentName: "Produtor de Mídia",
           agentTier: SkillTier.CREATIVE,
           artifacts: [artifact]
-        }]);
+        };
+        setMessages(prev => [...prev, aiMsg as Message]);
+        firebaseService.saveMessage("default", aiMsg);
       }
     } catch (error) {
       console.error("Video Gen Error:", error);
@@ -240,7 +298,9 @@ export default function App() {
     const currentImages = [...selectedImages];
     setInput("");
     setSelectedImages([]);
-    setMessages(prev => [...prev, { role: "user", content: userMessage, images: currentImages }]);
+    const userMsg: Omit<Message, 'createdAt'> = { role: "user", content: userMessage, images: currentImages };
+    setMessages(prev => [...prev, userMsg as Message]);
+    firebaseService.saveMessage("default", userMsg);
     setIsLoading(true);
 
     try {
@@ -271,7 +331,7 @@ export default function App() {
       // Fetch Brain Memories (RAG)
       let brainContext = "";
       try {
-        const { data: memories } = await brainService.getMemories(selectedSkill?.id);
+        const { data: memories } = await firebaseService.getMemories(selectedSkill?.id);
         if (memories && memories.length > 0) {
           // Select 3 most recent or relevant memories
           const topMemories = memories.slice(0, 3);
@@ -342,13 +402,13 @@ export default function App() {
       // Auto-Learning: Save to Brain
       if (aiResponse && aiResponse.length > 100) {
         try {
-          const brainMemory: Partial<BrainMemory> = {
+          const brainMemory: Omit<BrainMemory, 'id' | 'createdAt'> = {
             agentId: selectedSkill?.id || "general",
             title: `Insight: ${userMessage.slice(0, 30)}...`,
             content: aiResponse,
             tags: [selectedSkill?.category || "general", "auto-learned"],
           };
-          brainService.saveMemory(brainMemory);
+          firebaseService.saveMemory(brainMemory);
         } catch (e) {
           console.warn("Auto-learning failed:", e);
         }
@@ -389,13 +449,16 @@ export default function App() {
         setIsWorkspaceOpen(true);
       }
 
-      setMessages(prev => [...prev, { 
+      const aiMsg: Omit<Message, 'createdAt'> = { 
         role: "ai", 
         content: aiResponse.replace(artifactRegex, '> *Artefato gerado: $2*'),
         agentName: selectedSkill?.persona || "Assistente Geral",
         agentTier: selectedSkill?.tier,
         artifacts: artifacts.length > 0 ? artifacts : undefined
-      }]);
+      };
+
+      setMessages(prev => [...prev, aiMsg as Message]);
+      firebaseService.saveMessage("default", aiMsg);
     } catch (error) {
       console.error("AI Error:", error);
       setMessages(prev => [...prev, { role: "ai", content: "Erro: Falha ao conectar ao serviço de IA. Por favor, tente novamente." }]);
@@ -429,8 +492,63 @@ export default function App() {
     }
   };
 
+  const handleSaveBrandProfile = () => {
+    firebaseService.saveBrandProfile(brandProfile);
+    setIsBrandModalOpen(false);
+  };
+
+  if (!isAuthReady) {
+    return (
+      <div className="h-screen bg-[#0A0A0A] flex items-center justify-center">
+        <Loader2 className="w-10 h-10 text-blue-500 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-[#0A0A0A] flex flex-col items-center justify-center p-6 text-center space-y-12">
+        <div className="space-y-4">
+          <div className="w-24 h-24 bg-blue-600 rounded-[2.5rem] flex items-center justify-center mx-auto shadow-[0_0_50px_rgba(37,99,235,0.3)] animate-pulse">
+            <Zap className="w-12 h-12 text-white" />
+          </div>
+          <h1 className="text-6xl font-black text-white tracking-tighter uppercase italic leading-none">
+            Marketing <span className="text-blue-500">Swarm</span>
+          </h1>
+          <p className="text-white/40 font-bold uppercase tracking-[0.4em] text-xs">
+            v2.1 Intelligence System
+          </p>
+        </div>
+
+        <div className="max-w-md w-full bg-white/5 border border-white/10 rounded-[3rem] p-12 space-y-8 backdrop-blur-xl">
+          <div className="space-y-2">
+            <h2 className="text-2xl font-black text-white tracking-tight uppercase italic">Bem-vindo ao Futuro</h2>
+            <p className="text-white/40 text-sm font-medium leading-relaxed">
+              Acesse o enxame de inteligência de marketing mais avançado do mundo.
+            </p>
+          </div>
+
+          <button
+            onClick={handleLogin}
+            className="w-full py-5 bg-white text-black rounded-2xl font-black text-xs uppercase tracking-[0.2em] hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-3 shadow-[0_20px_40px_rgba(255,255,255,0.1)]"
+          >
+            <LogIn className="w-4 h-4" />
+            Entrar com Google
+          </button>
+          
+          <div className="pt-4 flex items-center justify-center gap-6 opacity-20">
+            <Cpu className="w-5 h-5 text-white" />
+            <Brain className="w-5 h-5 text-white" />
+            <Globe className="w-5 h-5 text-white" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex h-screen bg-[#E4E3E0] text-[#141414] font-sans overflow-hidden">
+    <ErrorBoundary>
+      <div className="flex h-screen bg-[#E4E3E0] text-[#141414] font-sans overflow-hidden">
       {/* Sidebar */}
       <motion.aside 
         initial={false}
@@ -599,50 +717,67 @@ export default function App() {
             </div>
           </div>
 
-          {/* Skill Tiers */}
-          {Object.values(SkillTier).map((tier) => (
-            <div key={tier} className="space-y-3">
-              <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30 px-2 flex items-center gap-2">
-                <div className="w-1 h-1 bg-blue-500 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.8)]" />
-                {tier}
-              </h3>
-              <div className="space-y-1.5">
-                {MARKETING_SKILLS.filter(s => s.tier === tier).map((skill) => (
-                  <button
-                    key={skill.id}
-                    onClick={() => setSelectedSkill(skill)}
-                    className={cn(
-                      "w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all group relative overflow-hidden",
-                      selectedSkill?.id === skill.id 
-                        ? "bg-blue-600 text-white shadow-[0_4px_15px_rgba(37,99,235,0.3)]" 
-                        : "hover:bg-white/5 text-white/60 hover:text-white"
-                    )}
-                  >
-                    <div className={cn(
-                      "w-9 h-9 rounded-lg flex items-center justify-center transition-all",
-                      selectedSkill?.id === skill.id ? "bg-white/20" : "bg-white/5 group-hover:bg-white/10 group-hover:scale-110"
-                    )}>
-                      {getCategoryIcon(skill.category)}
-                    </div>
-                    <div className="flex flex-col items-start min-w-0">
-                      <span className="text-xs font-bold tracking-tight truncate w-full">{skill.name}</span>
-                      <span className="text-[9px] opacity-50 font-medium truncate w-full uppercase tracking-tighter">{skill.persona}</span>
-                    </div>
-                    {selectedSkill?.id === skill.id && (
-                      <motion.div 
-                        layoutId="active-pill"
-                        className="absolute left-0 w-1 h-8 bg-white rounded-r-full"
-                      />
-                    )}
-                    <ChevronRight className={cn(
-                      "w-3 h-3 ml-auto opacity-0 group-hover:opacity-40 transition-all",
-                      selectedSkill?.id === skill.id && "opacity-100"
-                    )} />
-                  </button>
-                ))}
+          {/* Skill Categories */}
+          {Object.values(SkillCategory).map((category) => {
+            const isExpanded = expandedCategory === category;
+            const categorySkills = MARKETING_SKILLS.filter(s => s.category === category);
+            
+            return (
+              <div key={category} className="space-y-1">
+                <button
+                  onClick={() => setExpandedCategory(isExpanded ? null : category)}
+                  className="w-full flex items-center justify-between px-2 py-2 text-[10px] font-bold uppercase tracking-[0.2em] text-white/50 hover:text-white transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <div className={cn("w-1.5 h-1.5 rounded-full", CATEGORY_COLORS[category])} />
+                    {category}
+                  </div>
+                  <ChevronRight className={cn("w-3 h-3 transition-transform", isExpanded ? "rotate-90" : "")} />
+                </button>
+                
+                <AnimatePresence>
+                  {isExpanded && (
+                    <motion.div 
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      className="space-y-1 overflow-hidden"
+                    >
+                      {categorySkills.map((skill) => (
+                        <button
+                          key={skill.id}
+                          onClick={() => setSelectedSkill(skill)}
+                          className={cn(
+                            "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all group relative overflow-hidden text-sm",
+                            selectedSkill?.id === skill.id 
+                              ? "bg-white/10 text-white shadow-[0_2px_10px_rgba(255,255,255,0.05)]" 
+                              : "hover:bg-white/5 text-white/70 hover:text-white"
+                          )}
+                        >
+                          <div className={cn(
+                            "w-7 h-7 rounded-md flex items-center justify-center transition-all",
+                            selectedSkill?.id === skill.id ? "bg-white/20" : "bg-white/5 group-hover:bg-white/10"
+                          )}>
+                            {getCategoryIcon(skill.category)}
+                          </div>
+                          <div className="flex flex-col items-start min-w-0">
+                            <span className="font-medium truncate w-full">{skill.name}</span>
+                            <span className="text-[10px] opacity-60 font-medium truncate w-full uppercase tracking-tight">{skill.persona}</span>
+                          </div>
+                          {selectedSkill?.id === skill.id && (
+                            <motion.div 
+                              layoutId="active-pill"
+                              className={cn("absolute left-0 top-0 bottom-0 w-0.5", CATEGORY_COLORS[category])}
+                            />
+                          )}
+                        </button>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <div className="p-4 border-t border-white/5 space-y-3 bg-black/40 backdrop-blur-xl">
@@ -654,6 +789,24 @@ export default function App() {
             <span className="text-[11px] font-black uppercase tracking-[0.1em]">Configurar Marca</span>
             {brandProfile.name && <div className="ml-auto w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse" />}
           </button>
+
+          <div className="flex items-center gap-3 p-3 bg-white/5 rounded-2xl border border-white/5">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center font-black text-white text-[10px] shadow-lg">
+              {user?.displayName?.[0] || user?.email?.[0] || "U"}
+            </div>
+            <div className="flex flex-col overflow-hidden">
+              <span className="text-[10px] font-black text-white truncate">{user?.displayName || "Usuário"}</span>
+              <span className="text-[8px] font-bold text-white/30 truncate">{user?.email}</span>
+            </div>
+            <button 
+              onClick={handleLogout}
+              className="ml-auto p-2 hover:bg-white/10 rounded-lg transition-colors text-white/40 hover:text-rose-500"
+              title="Sair"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
           <div className="flex items-center justify-between px-2 py-1">
             <span className="text-[9px] font-black text-white/20 uppercase tracking-widest">v2.1.0-PRO-MAX</span>
             <div className="flex gap-1.5">
@@ -884,7 +1037,7 @@ export default function App() {
                 </div>
                 <div className="p-8 bg-black/5 border-t border-black/5 flex justify-end gap-3">
                   <button 
-                    onClick={() => setIsBrandModalOpen(false)}
+                    onClick={handleSaveBrandProfile}
                     className="px-8 py-4 bg-black text-white rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] hover:scale-105 active:scale-95 transition-all shadow-xl shadow-black/10"
                   >
                     Salvar Perfil Estratégico
@@ -1383,7 +1536,6 @@ export default function App() {
           onClose={() => setIsLiveMode(false)} 
         />
       </main>
-
       <style>{`
         .custom-scrollbar::-webkit-scrollbar {
           width: 5px;
@@ -1418,5 +1570,6 @@ export default function App() {
         }
       `}</style>
     </div>
+    </ErrorBoundary>
   );
 }

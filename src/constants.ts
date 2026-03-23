@@ -1,5 +1,21 @@
 import { SkillCategory, MarketingSkill, SkillTier } from "./types";
 
+export const CATEGORY_COLORS: Record<SkillCategory, string> = {
+  [SkillCategory.CRO]: "bg-emerald-500",
+  [SkillCategory.CONTENT]: "bg-rose-500",
+  [SkillCategory.SEO]: "bg-amber-500",
+  [SkillCategory.PAID]: "bg-blue-500",
+  [SkillCategory.MEASUREMENT]: "bg-purple-500",
+  [SkillCategory.RETENTION]: "bg-orange-500",
+  [SkillCategory.GROWTH]: "bg-cyan-500",
+  [SkillCategory.STRATEGY]: "bg-indigo-500",
+  [SkillCategory.SALES]: "bg-yellow-500",
+  [SkillCategory.HUMANIZATION]: "bg-pink-500",
+  [SkillCategory.AI_ENGINEERING]: "bg-teal-500",
+  [SkillCategory.MEDIA_PRODUCTION]: "bg-red-500",
+  [SkillCategory.RESEARCH]: "bg-lime-500",
+};
+
 export const MARKETING_FRAMEWORKS = [
   { id: "aarrr", name: "Pirate Metrics (AARRR)", description: "Acquisition, Activation, Retention, Referral, Revenue" },
   { id: "hook", name: "Hook Model", description: "Trigger, Action, Variable Reward, Investment" },
