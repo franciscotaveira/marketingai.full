@@ -13,7 +13,7 @@ import {
   Timestamp
 } from 'firebase/firestore';
 import { db, auth, handleFirestoreError, OperationType } from '../firebase';
-import { BrainMemory, Message, BrandProfile } from '../types';
+import { BrainMemory, Message, BrandProfile, KnowledgeItem } from '../types';
 
 export const firebaseService = {
   // Brain Memories
@@ -112,6 +112,40 @@ export const firebaseService = {
     } catch (error) {
       handleFirestoreError(error, OperationType.GET, path);
       return { data: null, error };
+    }
+  },
+
+  // Knowledge Base
+  async saveKnowledge(knowledge: Omit<KnowledgeItem, 'id' | 'createdAt'>) {
+    if (!auth.currentUser) return { error: 'User not authenticated' };
+    const path = `users/${auth.currentUser.uid}/knowledgeBase`;
+    try {
+      const docRef = await addDoc(collection(db, path), {
+        ...knowledge,
+        createdAt: serverTimestamp()
+      });
+      return { data: { ...knowledge, id: docRef.id }, error: null };
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, path);
+      return { data: null, error };
+    }
+  },
+
+  async getKnowledge() {
+    if (!auth.currentUser) return { data: [], error: 'User not authenticated' };
+    const path = `users/${auth.currentUser.uid}/knowledgeBase`;
+    try {
+      const q = query(collection(db, path), orderBy('createdAt', 'desc'));
+      const snapshot = await getDocs(q);
+      const knowledge = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        createdAt: (doc.data().createdAt as Timestamp)?.toDate().toISOString() || new Date().toISOString()
+      })) as unknown as KnowledgeItem[];
+      return { data: knowledge, error: null };
+    } catch (error) {
+      handleFirestoreError(error, OperationType.GET, path);
+      return { data: [], error };
     }
   }
 };

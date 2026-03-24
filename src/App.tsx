@@ -129,8 +129,12 @@ export default function App() {
     tags: string[]
   }>>([]);
 
-  const shareKnowledge = (agentId: string, topic: string, content: string, confidence: number, tags: string[]) => {
-    setKnowledgeBase(prev => [...prev, { id: Math.random().toString(), agentId, topic, content, confidence, tags }]);
+  const shareKnowledge = async (agentId: string, topic: string, content: string, confidence: number, tags: string[]) => {
+    const newKnowledge = { agentId, topic, content, confidence, tags };
+    const { data, error } = await firebaseService.saveKnowledge(newKnowledge);
+    if (data) {
+      setKnowledgeBase(prev => [...prev, data]);
+    }
   };
 
   useEffect(() => {
@@ -187,6 +191,9 @@ export default function App() {
         // Load messages for the current chat (using a default chat ID for now)
         const chatMessages = await firebaseService.getMessages("default");
         if (chatMessages.data) setMessages(chatMessages.data);
+
+        const { data: knowledge } = await firebaseService.getKnowledge();
+        if (knowledge) setKnowledgeBase(knowledge);
       };
       loadData();
     }
@@ -1515,7 +1522,7 @@ export default function App() {
                 <div className="mt-4 flex items-center justify-center gap-6 opacity-30">
                   <p className="text-[9px] font-black uppercase tracking-[0.3em]">Gemini 3 Flash Intelligence</p>
                   <div className="w-1 h-1 bg-black rounded-full" />
-                  <p className="text-[9px] font-black uppercase tracking-[0.3em]">Marketing Swarm v2.1 PRO</p>
+                  <p className="text-[9px] font-black uppercase tracking-[0.3em]">Enxame de Marketing v2.1 PRO</p>
                 </div>
               </div>
             </div>
@@ -1537,8 +1544,8 @@ export default function App() {
                       <LayoutDashboard className="w-5 h-5 text-white" />
                     </div>
                     <div>
-                      <h3 className="font-black tracking-tighter uppercase text-sm text-black/90">Artifact Studio</h3>
-                      <p className="text-[9px] font-black text-black/30 uppercase tracking-widest">Workspace de Produção</p>
+                      <h3 className="font-black tracking-tighter uppercase text-sm text-black/90">Estúdio de Artefatos</h3>
+                      <p className="text-[9px] font-black text-black/30 uppercase tracking-widest">Espaço de Trabalho de Produção</p>
                     </div>
                   </div>
                   <button 

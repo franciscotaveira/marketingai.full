@@ -2,6 +2,8 @@ import { motion } from "motion/react";
 import { Bot, Brain, FileText, Search, Megaphone, BarChart3, Users, Target, DollarSign } from "lucide-react";
 import { cn } from "../lib/utils";
 import { MARKETING_SKILLS } from "../constants";
+import { KnowledgeGraph } from './KnowledgeGraph';
+import { KnowledgeItem } from '../types';
 
 interface Agent {
   id: string;
@@ -25,10 +27,9 @@ const AGENT_CONFIG = {
 
 export function SwarmWorld({ agents, knowledgeBase }: { 
   agents: (Agent & { role: string })[], 
-  knowledgeBase: Array<{ id: string, agentId: string, topic: string, content: string, confidence: number, tags: string[] }> 
+  knowledgeBase: KnowledgeItem[]
 }) {
   const latestInsights = knowledgeBase.slice(-5).reverse();
-  const topics = Array.from(new Set(knowledgeBase.map(k => k.topic)));
 
   return (
     <div className="relative w-full h-[700px] bg-black rounded-2xl border border-white/10 p-6 grid grid-cols-4 gap-6 overflow-hidden">
@@ -87,15 +88,9 @@ export function SwarmWorld({ agents, knowledgeBase }: {
         <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-white/50">Hub de Inteligência</h3>
         
         {/* Knowledge Map */}
-        <div className="bg-white/5 rounded-xl p-3 border border-white/5">
+        <div className="bg-white/5 rounded-xl p-3 border border-white/5 h-[300px]">
           <h4 className="text-[8px] font-bold uppercase text-white/30 mb-2">Mapa de Conhecimento</h4>
-          <div className="flex flex-wrap gap-1">
-            {topics.map(topic => (
-              <span key={topic} className="text-[9px] bg-blue-500/20 text-blue-300 px-1.5 py-0.5 rounded-full border border-blue-500/30">
-                {topic}
-              </span>
-            ))}
-          </div>
+          <KnowledgeGraph knowledgeBase={knowledgeBase} />
         </div>
 
         {/* Insight Feed */}

@@ -96,6 +96,16 @@ export interface Artifact {
   };
 }
 
+export interface KnowledgeItem {
+  id: string;
+  agentId: string;
+  topic: string;
+  content: string;
+  confidence: number;
+  tags: string[];
+  createdAt?: string;
+}
+
 export interface BrainNode {
   id: string;
   label: string;

@@ -66,7 +66,7 @@ export const LiveConversation: React.FC<LiveConversationProps> = ({ isOpen, onCl
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } },
           },
-          systemInstruction: "Você é o núcleo do Marketing Swarm, um assistente de marketing de elite. Fale de forma profissional, estratégica e inspiradora. Ajude o usuário a orquestrar suas campanhas em tempo real.",
+          systemInstruction: "Você é o núcleo do Enxame de Marketing, um assistente de marketing de elite. Fale de forma profissional, estratégica e inspiradora. Ajude o usuário a orquestrar suas campanhas em tempo real.",
         },
       });
     } catch (error) {

@@ -32,6 +32,16 @@ service cloud.firestore {
     //   - tags: list (optional) - List of tags
     //   - createdAt: timestamp (required) - Creation timestamp
     //
+    // Collection: users/{userId}/knowledgeBase
+    // Document ID: {knowledgeId}
+    // Fields:
+    //   - agentId: string (required)
+    //   - topic: string (required, max 200)
+    //   - content: string (required, max 5000)
+    //   - confidence: number (required, 0-1)
+    //   - tags: list (required, max 20)
+    //   - createdAt: timestamp (required)
+    //
     // Collection: users/{userId}/brandProfile
     // Document ID: current
     // Fields:
@@ -100,6 +110,16 @@ service cloud.firestore {
              data.createdAt is timestamp;
     }
 
+    function isValidKnowledgeItem(data) {
+      return hasRequiredFields(['agentId', 'topic', 'content', 'confidence', 'tags', 'createdAt']) &&
+             data.agentId is string &&
+             data.topic is string && data.topic.size() <= 200 &&
+             data.content is string && data.content.size() <= 5000 &&
+             data.confidence is number && data.confidence >= 0 && data.confidence <= 1 &&
+             data.tags is list && data.tags.size() <= 20 &&
+             data.createdAt is timestamp;
+    }
+
     function isValidBrandProfile(data) {
       return true; // Simple profile validation
     }
@@ -124,6 +144,13 @@ service cloud.firestore {
         allow read: if isOwner(userId) || isAdmin();
         allow create: if isOwner(userId) && isValidBrainMemory(request.resource.data);
         allow update: if isOwner(userId) && isValidBrainMemory(request.resource.data);
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
+      match /knowledgeBase/{knowledgeId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidKnowledgeItem(request.resource.data);
+        allow update: if isOwner(userId) && isValidKnowledgeItem(request.resource.data);
         allow delete: if isOwner(userId) || isAdmin();
       }
 
