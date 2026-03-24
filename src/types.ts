@@ -128,4 +128,5 @@ export interface BrainMemory {
   tags: string[];
   createdAt: string;
   roi?: number;
+  embedding?: number[]; // Adicionado para RAG
 }

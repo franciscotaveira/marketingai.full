@@ -6,7 +6,7 @@
 import { useState, useRef, useEffect } from "react";
 import { GoogleGenAI } from "@google/genai";
 import { motion, AnimatePresence } from "motion/react";
-import { sendMessageToAgent } from "./services/chatService";
+import { orchestrateRequest } from "./services/orchestrator";
 import { 
   Search, 
   Send, 
@@ -63,10 +63,13 @@ import {
   LogIn,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import { SwarmFlow } from "./components/SwarmFlow";
+import { MetisDashboard } from "./components/MetisDashboard";
 import { ArtifactRenderer } from "./components/MarketingVisuals";
 import { SwarmWorld } from "./components/SwarmWorld";
 import { LiveConversation } from "./components/LiveConversation";
 import { AgentBrain } from "./components/AgentBrain";
+import { AgentControlPanel } from "./components/AgentControlPanel";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { MARKETING_SKILLS, MARKETING_FRAMEWORKS, CATEGORY_COLORS } from "./constants";
 import { MarketingSkill, SkillCategory, BrandProfile, Message, SkillTier, Artifact, BrainMemory } from "./types";
@@ -85,9 +88,11 @@ export default function App() {
   const [selectedSkill, setSelectedSkill] = useState<MarketingSkill | null>(null);
   const [expandedCategory, setExpandedCategory] = useState<SkillCategory | null>(null);
   const [input, setInput] = useState("");
+  const [isProcessing, setIsProcessing] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [activeAgents, setActiveAgents] = useState<{id: string, status: 'idle' | 'thinking' | 'using_tool', tool?: string}[]>([]);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isBrandModalOpen, setIsBrandModalOpen] = useState(false);
   const [selectedFramework, setSelectedFramework] = useState<string | null>(null);
@@ -107,6 +112,7 @@ export default function App() {
   const [isSwarmView, setIsSwarmView] = useState(false);
   const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
   const [isHumanizedMode, setIsHumanizedMode] = useState(false);
+  const [isGeneralAssistantMode, setIsGeneralAssistantMode] = useState(false);
   const [isHighThinking, setIsHighThinking] = useState(false);
   const [isLiveMode, setIsLiveMode] = useState(false);
   const [agents, setAgents] = useState<Array<{ id: string, name: string, status: "idle" | "thinking" | "orchestrating" | "swarming", role: string }>>([
@@ -158,6 +164,7 @@ export default function App() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [imageConfig, setImageConfig] = useState({ aspectRatio: "1:1", size: "1K" });
   const [isBrainOpen, setIsBrainOpen] = useState(false);
+  const [isMetisOpen, setIsMetisOpen] = useState(false);
   const [calcData, setCalcData] = useState({ investment: 0, revenue: 0 });
   
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -369,9 +376,9 @@ export default function App() {
         ? `\n\nPerfil da Marca:\n- Nome: ${brandProfile.name}\n- Público: ${brandProfile.audience}\n- Tom: ${brandProfile.tone}\n- Mensagem: ${brandProfile.messaging}`
         : "";
 
-      const skillContext = selectedSkill 
+      const skillContext = (!isGeneralAssistantMode && selectedSkill) 
         ? `\n\nContexto da Habilidade (${selectedSkill.name}):\n${selectedSkill.prompt}`
-        : "";
+        : "\n\nVocê é um assistente de marketing multifacetado e experiente. Responda de forma abrangente, estratégica e prática, integrando conhecimentos de diversas áreas do marketing conforme necessário.";
 
       const frameworkContext = selectedFramework 
         ? `\n\nUtilize o Framework: ${MARKETING_FRAMEWORKS.find(f => f.id === selectedFramework)?.name} (${MARKETING_FRAMEWORKS.find(f => f.id === selectedFramework)?.description})`
@@ -392,7 +399,7 @@ export default function App() {
       // Fetch Brain Memories (RAG)
       let brainContext = "";
       try {
-        const { data: memories } = await firebaseService.getMemories(selectedSkill?.id);
+        const { data: memories } = await firebaseService.getRelevantMemories(userMessage, selectedSkill?.id);
         if (memories && memories.length > 0) {
           // Select 3 most recent or relevant memories
           const topMemories = memories.slice(0, 3);
@@ -455,13 +462,23 @@ export default function App() {
       const model = selectedSkill?.model || "gemini-3.1-pro-preview";
       
       try {
-        aiResponse = await sendMessageToAgent(
-          selectedSkill?.id || "general",
+        setIsProcessing(true);
+        const result = await orchestrateRequest(
           prompt,
+          selectedSkill?.id || null,
+          isSwarmMode,
           model,
           systemInstruction,
-          useGrounding ? [{ googleSearch: {} }] : undefined
+          useGrounding,
+          (id, status, tool) => {
+            setActiveAgents(prev => {
+              const filtered = prev.filter(a => a.id !== id);
+              return [...filtered, { id, status, tool }];
+            });
+          }
         );
+        setIsProcessing(false);
+        aiResponse = result.response;
       } catch (error) {
         console.error("Chat error:", error);
         aiResponse = "Sinto muito, ocorreu um erro ao gerar a resposta.";
@@ -640,8 +657,8 @@ export default function App() {
             <X className="w-5 h-5" />
           </button>
         </div>
-
         <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-8">
+          <AgentControlPanel activeAgents={activeAgents} />
           {/* Global Toggles */}
           <div className="space-y-3">
             <h2 className="text-[10px] uppercase tracking-[0.2em] font-black text-white/30 px-2">Configurações</h2>
@@ -690,6 +707,30 @@ export default function App() {
                   <div className={cn(
                     "absolute top-1 w-2 h-2 rounded-full transition-all shadow-sm",
                     isHumanizedMode ? "right-1 bg-white" : "left-1 bg-white/50"
+                  )} />
+                </div>
+              </button>
+
+              <button 
+                onClick={() => setIsGeneralAssistantMode(!isGeneralAssistantMode)}
+                className={cn(
+                  "w-full p-3.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-between group border",
+                  isGeneralAssistantMode 
+                    ? "bg-indigo-600 border-indigo-500 text-white shadow-[0_0_15px_rgba(79,70,229,0.3)]" 
+                    : "bg-white/5 border-white/5 text-white/40 hover:bg-white/10"
+                )}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Bot className={cn("w-4 h-4", isGeneralAssistantMode ? "text-white" : "text-white/40")} />
+                  <span>Assistente Geral</span>
+                </div>
+                <div className={cn(
+                  "w-8 h-4 rounded-full relative transition-all",
+                  isGeneralAssistantMode ? "bg-white/20" : "bg-white/10"
+                )}>
+                  <div className={cn(
+                    "absolute top-1 w-2 h-2 rounded-full transition-all shadow-sm",
+                    isGeneralAssistantMode ? "right-1 bg-white" : "left-1 bg-white/50"
                   )} />
                 </div>
               </button>
@@ -751,6 +792,16 @@ export default function App() {
                 <div className="flex items-center gap-2.5">
                   <Brain className="w-4 h-4" />
                   <span>Cérebro Sináptico</span>
+                </div>
+                <ChevronRight className="w-3 h-3 group-hover:translate-x-1 transition-all" />
+              </button>
+              <button 
+                onClick={() => setIsMetisOpen(true)}
+                className="w-full p-3.5 bg-purple-600/10 border border-purple-500/20 rounded-xl text-[10px] font-black uppercase tracking-widest text-purple-400 hover:bg-purple-600/20 transition-all flex items-center justify-between group"
+              >
+                <div className="flex items-center gap-2.5">
+                  <BarChart3 className="w-4 h-4" />
+                  <span>Analytics Metis</span>
                 </div>
                 <ChevronRight className="w-3 h-3 group-hover:translate-x-1 transition-all" />
               </button>
@@ -888,8 +939,12 @@ export default function App() {
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col relative min-w-0">
-        {/* Header */}
-        <header className="h-16 bg-white/70 backdrop-blur-2xl border-b border-black/5 flex items-center justify-between px-6 sticky top-0 z-30 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+        {isSwarmView ? (
+          <SwarmFlow agents={agents} />
+        ) : (
+          <>
+            {/* Header */}
+            <header className="h-16 bg-white/70 backdrop-blur-2xl border-b border-black/5 flex items-center justify-between px-6 sticky top-0 z-30 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
           <div className="flex items-center gap-4">
             {!isSidebarOpen && (
               <button 
@@ -902,6 +957,12 @@ export default function App() {
             <div className="flex flex-col">
               <h1 className="text-sm font-black uppercase tracking-[0.15em] text-black/80 flex items-center gap-2">
                 {selectedSkill ? selectedSkill.name : "Inteligência de Marketing"}
+                <button 
+                  onClick={() => setMessages([])}
+                  className="text-[8px] font-black uppercase tracking-widest text-black/30 hover:text-red-500 transition-colors ml-4"
+                >
+                  Limpar Conversa
+                </button>
                 <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.6)]" />
               </h1>
               <p className="text-[10px] text-black/40 font-bold uppercase tracking-tighter">
@@ -911,6 +972,16 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => setIsSwarmView(!isSwarmView)}
+              className={cn(
+                "p-2.5 rounded-xl transition-all active:scale-95 border",
+                isSwarmView ? "bg-blue-600 text-white border-blue-500" : "bg-white border-black/5 text-black/60 hover:bg-black/5"
+              )}
+              title="Visualizar Enxame"
+            >
+              <Users className="w-5 h-5" />
+            </button>
             <div className="hidden lg:flex items-center gap-2 mr-4 px-3 py-1.5 bg-black/5 rounded-xl border border-black/5">
               <div className="flex -space-x-2">
                 {[1, 2, 3].map((i) => (
@@ -1400,8 +1471,8 @@ export default function App() {
                         </div>
                       )}
                     </div>
-                    <span className="text-[9px] font-black opacity-20 uppercase tracking-[0.3em] px-2">
-                      {msg.role === "user" ? "Solicitação do Cliente" : "Resultado da Inteligência"}
+                    <span className="text-[10px] font-medium text-black/40 uppercase tracking-wider px-2">
+                      {msg.role === "user" ? "Sua mensagem" : "Resposta do Agente"}
                     </span>
                   </div>
                 </motion.div>
@@ -1458,7 +1529,7 @@ export default function App() {
                   ))}
                 </div>
                 
-                <div className="relative group bg-white rounded-[2.5rem] shadow-[0_10px_40px_rgba(0,0,0,0.08)] border border-black/5 p-2 transition-all focus-within:shadow-[0_20px_60px_rgba(0,0,0,0.12)] focus-within:border-blue-500/20">
+                <div className="group bg-white rounded-[2.5rem] shadow-[0_10px_40px_rgba(0,0,0,0.08)] border border-black/5 p-2 transition-all focus-within:shadow-[0_20px_60px_rgba(0,0,0,0.12)] focus-within:border-blue-500/20 flex items-end gap-2">
                   <textarea
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
@@ -1469,9 +1540,9 @@ export default function App() {
                       }
                     }}
                     placeholder={selectedSkill ? `Pergunte sobre ${selectedSkill.name.toLowerCase()}...` : "Qual é o seu desafio de marketing hoje?"}
-                    className="w-full bg-transparent rounded-[2rem] p-5 pr-40 focus:outline-none transition-all min-h-[80px] max-h-[300px] resize-none font-medium text-black/70 placeholder:text-black/20"
+                    className="w-full bg-transparent rounded-[2rem] p-5 focus:outline-none transition-all min-h-[80px] max-h-[300px] resize-none font-medium text-black/70 placeholder:text-black/20"
                   />
-                  <div className="absolute bottom-4 right-4 flex gap-2">
+                  <div className="flex gap-2 pb-2 pr-2">
                     <input 
                       type="file" 
                       ref={fileInputRef} 
@@ -1480,6 +1551,13 @@ export default function App() {
                       multiple 
                       accept="image/*" 
                     />
+                    <button
+                      onClick={() => setMessages([])}
+                      className="p-4 bg-red-50 text-red-500 rounded-2xl hover:bg-red-100 transition-all"
+                      title="Limpar Chat"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
                     <button
                       onClick={() => fileInputRef.current?.click()}
                       className="p-4 bg-black/5 text-black/40 rounded-2xl hover:bg-black/10 hover:text-black transition-all active:scale-90"
@@ -1620,6 +1698,15 @@ export default function App() {
           isOpen={isLiveMode} 
           onClose={() => setIsLiveMode(false)} 
         />
+        {isMetisOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-6" onClick={() => setIsMetisOpen(false)}>
+            <div className="w-full max-w-4xl" onClick={e => e.stopPropagation()}>
+              <MetisDashboard />
+            </div>
+          </div>
+        )}
+          </>
+        )}
       </main>
       <style>{`
         .custom-scrollbar::-webkit-scrollbar {

@@ -4,6 +4,7 @@ import { cn } from "../lib/utils";
 import { MARKETING_SKILLS } from "../constants";
 import { KnowledgeGraph } from './KnowledgeGraph';
 import { KnowledgeItem } from '../types';
+import { TestKnowledgeBase } from './TestKnowledgeBase';
 
 interface Agent {
   id: string;
@@ -12,7 +13,6 @@ interface Agent {
   role: string;
   icon?: React.ReactNode;
 }
-
 const AGENT_CONFIG = {
   "1": { role: "Content & Copy", icon: <FileText className="w-4 h-4" /> },
   "2": { role: "SEO & Discovery", icon: <Search className="w-4 h-4" /> },
@@ -38,6 +38,9 @@ export function SwarmWorld({ agents, knowledgeBase }: {
 
       {/* Left Column: Swarm (3/4 width) */}
       <div className="col-span-3 flex flex-col gap-6 z-10">
+        <div className="flex justify-end">
+          <TestKnowledgeBase />
+        </div>
         {/* Orchestrator & Agents (Tree) */}
         <div className="flex flex-col items-center z-10">
           <motion.div 
