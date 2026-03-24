@@ -6,6 +6,7 @@
 import { useState, useRef, useEffect } from "react";
 import { GoogleGenAI } from "@google/genai";
 import { motion, AnimatePresence } from "motion/react";
+import { sendMessageToAgent } from "./services/chatService";
 import { 
   Search, 
   Send, 
@@ -63,6 +64,7 @@ import {
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { ArtifactRenderer } from "./components/MarketingVisuals";
+import { SwarmWorld } from "./components/SwarmWorld";
 import { LiveConversation } from "./components/LiveConversation";
 import { AgentBrain } from "./components/AgentBrain";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -102,10 +104,51 @@ export default function App() {
   const [isSwarmMode, setIsSwarmMode] = useState(false);
   const [activeArtifact, setActiveArtifact] = useState<Artifact | null>(null);
   const [isWorkspaceOpen, setIsWorkspaceOpen] = useState(false);
+  const [isSwarmView, setIsSwarmView] = useState(false);
   const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
   const [isHumanizedMode, setIsHumanizedMode] = useState(false);
   const [isHighThinking, setIsHighThinking] = useState(false);
   const [isLiveMode, setIsLiveMode] = useState(false);
+  const [agents, setAgents] = useState<Array<{ id: string, name: string, status: "idle" | "thinking" | "orchestrating" | "swarming", role: string }>>([
+    { id: "1", name: "Hermes", status: "idle", role: "Content & Copy" },
+    { id: "2", name: "Apollo", status: "thinking", role: "SEO & Discovery" },
+    { id: "3", name: "Athena", status: "idle", role: "Paid & Distribution" },
+    { id: "4", name: "Metis", status: "idle", role: "Measurement & Testing" },
+    { id: "5", name: "Traffic", status: "idle", role: "Sales & RevOps" },
+    { id: "6", name: "CopyChief", status: "idle", role: "Copy Chief" },
+    { id: "7", name: "Design", status: "idle", role: "Visual Design" },
+    { id: "8", name: "Data", status: "idle", role: "Data Science" },
+    { id: "9", name: "Brand", status: "idle", role: "Brand Strategy" }
+  ]);
+  const [knowledgeBase, setKnowledgeBase] = useState<Array<{ 
+    id: string, 
+    agentId: string, 
+    topic: string, 
+    content: string, 
+    confidence: number,
+    tags: string[]
+  }>>([]);
+
+  const shareKnowledge = (agentId: string, topic: string, content: string, confidence: number, tags: string[]) => {
+    setKnowledgeBase(prev => [...prev, { id: Math.random().toString(), agentId, topic, content, confidence, tags }]);
+  };
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const randomAgent = agents[Math.floor(Math.random() * agents.length)];
+      const topics = ["SEO", "Copywriting", "Paid Media", "Data Analysis", "Brand Strategy"];
+      const topic = topics[Math.floor(Math.random() * topics.length)];
+      
+      shareKnowledge(
+        randomAgent.id, 
+        topic,
+        `Insight sobre ${topic} gerado por ${randomAgent.name}: ${Math.random().toString(36).substring(7)}`,
+        Math.random(),
+        [topic.toLowerCase(), "auto-learned"]
+      );
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [agents]);
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -115,6 +158,17 @@ export default function App() {
   
   const chatEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const statuses: ("idle" | "thinking" | "orchestrating" | "swarming")[] = ["idle", "thinking", "orchestrating", "swarming"];
+      setAgents(prev => prev.map(agent => ({
+        ...agent,
+        status: statuses[Math.floor(Math.random() * statuses.length)]
+      })));
+    }, 3000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -390,14 +444,21 @@ export default function App() {
       5. RESPONDA SEMPRE EM PORTUGUÊS (BRASIL).
       6. MODO CIENTISTA MALUCO: Você tem acesso a memórias sinápticas. Use-as para criar correlações inéditas entre diferentes áreas do marketing. Se encontrar um padrão de sucesso em uma memória, aplique-o de forma criativa no desafio atual.`;
 
-      let response;
-      if (isHighThinking) {
-        response = await gemini.generateComplexResponse(prompt, systemInstruction);
-      } else {
-        response = await gemini.generateText(prompt, MODELS.GENERAL, systemInstruction, useGrounding ? [{ googleSearch: {} }] : undefined);
+      let aiResponse: string;
+      const model = selectedSkill?.model || "gemini-3.1-pro-preview";
+      
+      try {
+        aiResponse = await sendMessageToAgent(
+          selectedSkill?.id || "general",
+          prompt,
+          model,
+          systemInstruction,
+          useGrounding ? [{ googleSearch: {} }] : undefined
+        );
+      } catch (error) {
+        console.error("Chat error:", error);
+        aiResponse = "Sinto muito, ocorreu um erro ao gerar a resposta.";
       }
-
-      const aiResponse = response.text || "Sinto muito, não consegui gerar uma resposta.";
       
       // Auto-Learning: Save to Brain
       if (aiResponse && aiResponse.length > 100) {
@@ -637,7 +698,7 @@ export default function App() {
               >
                 <div className="flex items-center gap-2.5">
                   <Brain className={cn("w-4 h-4", isHighThinking ? "text-white" : "text-white/40")} />
-                  <span>High Thinking</span>
+                  <span>Pensamento Avançado</span>
                 </div>
                 <div className={cn(
                   "w-8 h-4 rounded-full relative transition-all",
@@ -658,10 +719,10 @@ export default function App() {
                     onChange={(e) => setImageConfig(prev => ({ ...prev, aspectRatio: e.target.value }))}
                     className="bg-black/40 border border-white/10 rounded-lg p-1.5 text-[9px] text-white/60 outline-none"
                   >
-                    <option value="1:1">1:1 Square</option>
-                    <option value="16:9">16:9 Wide</option>
-                    <option value="9:16">9:16 Port</option>
-                    <option value="4:3">4:3 Photo</option>
+                    <option value="1:1">1:1 Quadrado</option>
+                    <option value="16:9">16:9 Widescreen</option>
+                    <option value="9:16">9:16 Retrato</option>
+                    <option value="4:3">4:3 Foto</option>
                     <option value="21:9">21:9 Ultra</option>
                   </select>
                   <select 
@@ -669,9 +730,9 @@ export default function App() {
                     onChange={(e) => setImageConfig(prev => ({ ...prev, size: e.target.value }))}
                     className="bg-black/40 border border-white/10 rounded-lg p-1.5 text-[9px] text-white/60 outline-none"
                   >
-                    <option value="1K">1K Quality</option>
-                    <option value="2K">2K Studio</option>
-                    <option value="4K">4K Ultra</option>
+                    <option value="1K">Qualidade 1K</option>
+                    <option value="2K">Qualidade 2K</option>
+                    <option value="4K">Qualidade 4K</option>
                   </select>
                 </div>
               </div>
@@ -851,7 +912,7 @@ export default function App() {
                   </div>
                 ))}
               </div>
-              <span className="text-[9px] font-black uppercase tracking-widest text-black/40">Swarm Ativo</span>
+              <span className="text-[9px] font-black uppercase tracking-widest text-black/40">Enxame Ativo</span>
             </div>
 
             <div className="flex items-center gap-1.5 bg-black/5 p-1 rounded-xl border border-black/5">
@@ -880,7 +941,7 @@ export default function App() {
                 title="Modo Swarm"
               >
                 <Zap className={cn("w-3.5 h-3.5", isSwarmMode && "fill-current text-yellow-300")} />
-                <span className="hidden sm:inline">Swarm</span>
+                <span className="hidden sm:inline">Enxame</span>
               </button>
 
               <button 
@@ -915,6 +976,21 @@ export default function App() {
                 title="Calculadora de ROI"
               >
                 <BarChart3 className="w-5 h-5 group-hover:text-green-600 transition-colors" />
+              </button>
+              <button 
+                onClick={() => {
+                  setIsSwarmView(true);
+                  setIsWorkspaceOpen(true);
+                }}
+                className={cn(
+                  "p-2.5 rounded-xl transition-all relative group shadow-sm border",
+                  isSwarmView && isWorkspaceOpen
+                    ? "bg-blue-600 text-white border-blue-600" 
+                    : "bg-white hover:bg-black/5 text-black/60 border-black/5"
+                )}
+                title="Sala dos Agentes"
+              >
+                <Users className="w-5 h-5" />
               </button>
               <button 
                 onClick={() => setIsWorkspaceOpen(!isWorkspaceOpen)}
@@ -1474,7 +1550,9 @@ export default function App() {
                 </div>
                 
                 <div className="flex-1 overflow-y-auto p-10 custom-scrollbar">
-                  {activeArtifact ? (
+                  {isSwarmView ? (
+                    <SwarmWorld agents={agents} knowledgeBase={knowledgeBase} />
+                  ) : activeArtifact ? (
                     <div className="space-y-10 max-w-3xl mx-auto">
                       <div className="flex items-start justify-between">
                         <div className="space-y-3">

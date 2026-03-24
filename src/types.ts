@@ -30,6 +30,7 @@ export interface MarketingSkill {
   persona: string;
   description: string;
   prompt: string;
+  model?: string; // Adicionado
 }
 
 export interface BrandProfile {

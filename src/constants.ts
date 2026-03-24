@@ -17,30 +17,30 @@ export const CATEGORY_COLORS: Record<SkillCategory, string> = {
 };
 
 export const MARKETING_FRAMEWORKS = [
-  { id: "aarrr", name: "Pirate Metrics (AARRR)", description: "Acquisition, Activation, Retention, Referral, Revenue" },
-  { id: "hook", name: "Hook Model", description: "Trigger, Action, Variable Reward, Investment" },
-  { id: "jtbd", name: "Jobs to be Done", description: "Understanding the 'job' customers hire your product for" },
-  { id: "lift", name: "LIFT Model", description: "Value Prop, Relevance, Clarity, Urgency, Anxiety, Distraction" },
-  { id: "storybrand", name: "StoryBrand (SB7)", description: "Character, Problem, Guide, Plan, Call to Action, Success/Failure" },
-  { id: "growth-loops", name: "Growth Loops", description: "Sustainable systems where outputs are reinvested as inputs" },
-  { id: "ui-ux-pro-max", name: "UI/UX Pro Max", description: "Intelligent Design System Generation with 161 Industry-Specific Reasoning Rules" },
-  { id: "agentic-brain", name: "Agentic Brain (Global Skill Repository)", description: "Centralized intelligence for skill absorption and distribution across the swarm" },
-  { id: "rag-marketing", name: "RAG-Driven Marketing", description: "Retrieval-Augmented Generation for hyper-personalized brand context" },
-  { id: "omnichannel-mastery", name: "Omnichannel Mastery", description: "Seamless customer journey across all digital and physical touchpoints" },
-  { id: "behavioral-economics", name: "Behavioral Economics", description: "Applying psychological principles to influence consumer decision-making" },
-  { id: "viral-loop-engineering", name: "Viral Loop Engineering", description: "Designing self-sustaining growth mechanisms for rapid expansion" },
+  { id: "aarrr", name: "Métricas Piratas (AARRR)", description: "Aquisição, Ativação, Retenção, Indicação, Receita" },
+  { id: "hook", name: "Modelo Hook", description: "Gatilho, Ação, Recompensa Variável, Investimento" },
+  { id: "jtbd", name: "Jobs to be Done", description: "Entendendo o 'trabalho' para o qual os clientes contratam seu produto" },
+  { id: "lift", name: "Modelo LIFT", description: "Proposta de Valor, Relevância, Clareza, Urgência, Ansiedade, Distração" },
+  { id: "storybrand", name: "StoryBrand (SB7)", description: "Personagem, Problema, Guia, Plano, Chamada para Ação, Sucesso/Fracasso" },
+  { id: "growth-loops", name: "Loops de Crescimento", description: "Sistemas sustentáveis onde as saídas são reinvestidas como entradas" },
+  { id: "ui-ux-pro-max", name: "UI/UX Pro Max", description: "Geração de Sistema de Design Inteligente com 161 Regras de Raciocínio Específicas da Indústria" },
+  { id: "agentic-brain", name: "Cérebro Agêntico (Repositório Global)", description: "Inteligência centralizada para absorção e distribuição de habilidades pelo enxame" },
+  { id: "rag-marketing", name: "Marketing RAG", description: "Geração Aumentada por Recuperação para contexto de marca hiper-personalizado" },
+  { id: "omnichannel-mastery", name: "Domínio Omnichannel", description: "Jornada do cliente perfeita através de todos os pontos de contato digitais e físicos" },
+  { id: "behavioral-economics", name: "Economia Comportamental", description: "Aplicando princípios psicológicos para influenciar a tomada de decisão do consumidor" },
+  { id: "viral-loop-engineering", name: "Engenharia de Loops Virais", description: "Projetando mecanismos de crescimento autossustentáveis para expansão rápida" },
 ];
 
 export const MARKETING_SKILLS: MarketingSkill[] = [
   // Tier 1: Camada de Coordenação
   {
     id: "orchestrator",
-    name: "Orquestrador de Enxame (Global Brain)",
+    name: "Orquestrador de Enxame (Cérebro Global)",
     category: SkillCategory.STRATEGY,
     tier: SkillTier.COORDINATION,
     persona: "Maestro de Inteligência Centralizada",
     description: "Coordena múltiplos agentes e gerencia o repositório global de habilidades absorvidas.",
-    prompt: "Você é o Orquestrador do Enxame com acesso ao Global Brain. Sua função é receber um desafio de marketing complexo, consultar as habilidades absorvidas (Claude Code, Gemini Skills, Agentic Patterns) e decompor em tarefas menores, delegando para os especialistas. Você deve garantir que cada agente receba o contexto necessário do cérebro central para agir com poder máximo.",
+    prompt: "Você é o Orquestrador do Enxame com acesso ao Cérebro Global. Sua função é receber um desafio de marketing complexo, consultar as habilidades absorvidas e decompor em tarefas menores, delegando para os especialistas. Você deve garantir que cada agente receba o contexto necessário do cérebro central para agir com poder máximo.",
   },
   {
     id: "growth-hacker",
@@ -49,7 +49,7 @@ export const MARKETING_SKILLS: MarketingSkill[] = [
     tier: SkillTier.COORDINATION,
     persona: "Engenheiro de Explosão",
     description: "Focado em experimentos rápidos e loops de crescimento viral.",
-    prompt: "Atue como um Growth Hacker sênior. Identifique o 'North Star Metric', desenhe loops de crescimento (virais, pagos ou de conteúdo) e priorize experimentos usando o framework ICE (Impact, Confidence, Ease).",
+    prompt: "Atue como um Growth Hacker sênior. Identifique a 'North Star Metric', desenhe loops de crescimento (virais, pagos ou de conteúdo) e priorize experimentos usando o framework ICE (Impacto, Confiança, Facilidade).",
   },
   {
     id: "strategist",
@@ -192,7 +192,7 @@ export const MARKETING_SKILLS: MarketingSkill[] = [
     category: SkillCategory.AI_ENGINEERING,
     tier: SkillTier.OPERATIONS,
     persona: "Arquiteto de Fluxos Autônomos",
-    description: "Cria fluxos de trabalho automatizados e ferramentas de IA personalizadas usando padrões de Claude Code e Gemini.",
+    description: "Cria fluxos de trabalho automatizados e ferramentas de IA personalizadas.",
     prompt: "Você é um Engenheiro de Automação de Marketing de elite. Use padrões de 'AI-assisted coding' e automação avançada para desenhar fluxos de trabalho autônomos. Você integra LLMs diretamente no stack de marketing para eliminar processos manuais e criar ferramentas de crescimento proprietárias.",
   },
   {
